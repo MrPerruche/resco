@@ -100,11 +100,6 @@ def calc_square_pyramid(
     Si b² - 3v / H est négatif, alors la racine sera imaginaire. Si la largeur de base est
     imaginaire, alors il est impossible de satisfaire les contraintes donc on ne peut pas émettre
     une solution.
-
-    Dans le code:
-    - a, b, H, v sont nommés sub_pyramid_base, pyramid_top, pyramid_height,
-        target_glass_volume
-    - sub_pyramid_base représente la base de la "petite" pyramide (-> La partie grande du frustum)
     """
 
     # Calculer la base intérieur de la pyramide (aire puis largeur)
@@ -125,16 +120,12 @@ def calc_square_pyramid(
     # Déterminer l'épaisseur horizontale du verre puis l'espace entre différent verres de la pile
     # -------------------------------------------------------------------------------------------
     """
-    Pour déterminer l'espace entre deux verres empilés, on détermine à partir de quand la base
-    intérieur du premier verre est supérieur ou égale à la base exterieur de la base du 2e verre
-    Dans notre cas, nous n'avons pas besoin de faire attention à si la paroi des verres plus haut
-    que ce point pose problème car les parois sont droites et de même angle.
-
-    Nous divisons ce calcul en 4 étapes:
+    Nous devons déterminer l'espace entre deux verres. Nous divisons ce calcul en plusieur étapes:
     - Calcul de la hauteur du frustum
     - Calcul du coefficient directeur de la paroi latérale
     - Calcul de l'épaisseur horizontale du verre
     - Calcul de la base extérieur à une hauteur définie
+    - Calcul de la hauteur de contact entre deux verres empilés
 
     Avec a réel la base inférieur (petite base), b réel la base supérieur (grande base) et H la
     hauteur de la pyramide entière,
@@ -144,7 +135,7 @@ def calc_square_pyramid(
     égales, ce qui arrive lorsqu'on à un frustum de hauteur 0). Nous pouvons ensuite multiplier par
     H pour obtenir la hauteur h du frustum:
 
-            h = (1 - a/b) * H
+            h = d_y = (1 - a/b) * H
 
     Pour déterminer le coefficient directeur, on a aussi besoin de la largeur de la bordure. Celle
     ci se calcule simplement par (b-a) / 2 (on ajoute /2 car on a besoin de la demi-base). On peut
@@ -157,7 +148,13 @@ def calc_square_pyramid(
         <=> c = ((b - a)2H) / ((b - a)b)
         <=> c = 2H / b
 
-    ... TODO
+    Avec e réel l'épaisseur du verre demandé par les consignes, nous déterminons l'épaisseur
+    horizontale du verre qui est nécéssaire pour les prochains calculs.
+    
+            cos theta = côté adjacent / hypoténuse = e / e_h
+        <=> e_h = e / cos(theta)
+        <=> e_h = e / arctan(d_y / d_x)
+        <=> e_h = e / arctan(c)
     
     Avec e réel l'épaisseur du verre et e_h réel l'épaisseur horizontale du verre, on calcule la
     largeur extérieur de la base inférieur.
@@ -167,20 +164,39 @@ def calc_square_pyramid(
 
             a_e = a + 2(e_h - e_h / c)
 
-    Désormais, nous pouvons calculer d réel la distance minimale entre les bases intérieurs de
-    deux verres empilés.
+    À partir de la base extérieure a_e, nous pouvons déterminer la distance verticale minimale
+    nécessaire entre deux verres empilés.
 
-            a_e = 
+    On cherche la hauteur y_c (mesurée depuis la base du frustum) telle que la largeur intérieure
+    disponible dans le premier verre soit exactement égale à la base extérieure du second verre.
+
+    La largeur intérieure du frustum varie linéairement avec la hauteur. On définit donc la
+    fonction:
+
+        f(y) = a + (b - a) * (y / h)
+
+    où y appartient à [0, h].
+
+    Le point de contact y_c est défini par :
+
+            f(y_c) = a_e
+        <=> a + (b - a) * (y_c / h) = a_e
+        <=> (b - a) * (y_c / h) = a_e - a
+        <=> (b - a) * y_c = h(a_e - a)
+        <=> y_c = h * (a_e - a) / (b - a)
+
+    La distance verticale d entre les bases intérieures de deux verres empilés est alors obtenue
+    en ajoutant l'épaisseur horizontale du verre :
+
+            d = y_c + e_h
     """
 
-    d_x = (b - a) / 2
-    d_y = (1 - a / b) * H
-    c = d_y / d_x  # 2 * H / b
-    angle = math.acos(d_x / math.sqrt(d_x**2 + d_y**2))
-    e_h = e / math.cos(angle - math.radians(90))
-
-    a_e = a + 2 * (e_h - e_h/c)
-
+    h = (1 - a / b) * H
+    c = 2 * H / b
+    e_h = e / math.atan(c)
+    a_e = a + 2 * (e_h - e_h / c)
+    y_c = h * (a_e - a) / (b - a)
+    d = y_c + e_h
 
 
     return 0, 0, 0
