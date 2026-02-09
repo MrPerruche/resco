@@ -16,8 +16,8 @@ from functools import lru_cache  # Memoization afin d'améliorer les performance
 DEBUG_MODE = True
 
 
-@lru_cache(maxsize=None)
-def prime_factors(n: int) -> list[int]:
+@lru_cache(maxsize=1100)
+def prime_factors(n: int) -> tuple[int]:
     """Décomposition en facteurs premiers"""
 
     result = []
@@ -29,7 +29,37 @@ def prime_factors(n: int) -> list[int]:
                 n //= i
                 break
 
-    return result
+    return tuple(result)
+
+@lru_cache(maxsize=1100)
+def pairs(elements: tuple[int]) -> set[tuple[int, int]]:
+    """
+    Algorithmes qui donne toutes les paires que l'on peut créer à partir de n tel que
+    x * y = produits de p
+    """
+    cmb = []
+
+    # Calculer les produits de p:
+    p = 1
+    for elem in elements:
+        p *= elem
+
+    # Créer toutes les paires possibles
+    for i in range(2 ** len(elements)): # Cette approche est acceptable. Pour 512 verres il y aura
+                                        # 9 facteurs premiers -> 512 itérations de cet algorithme:
+        x = 1
+        for j, k in enumerate(elements):
+            if (i >> k) & 1 == 1:
+                x *= elements[j]
+        y = p // x
+
+        # Optimization pour éviter d'avoir à la fin des combinaisons "dupliquées" ex. (5,2) et (2,5)
+        if x >= y:
+            cmb.append((x, y))
+
+    # Renvoyer les combinaisons en supprimant les éléments dupliqués
+    return set(cmb)
+
 
 
 
@@ -68,10 +98,6 @@ def calc_square_pyramid(
 
     v = target_glass_volume
     m = max_height
-
-    # ========================================
-    # ETAPE 1: DETERMINER LA TAILLE D'UNE PILE
-    # ========================================
 
     # -----------------------------------------------------------------------------------
     # Déterminer la hauteur intérieur du verre tel que le volume vaut target_glass_volume
@@ -188,11 +214,12 @@ def calc_square_pyramid(
         <=> y_c = h * (a_e - a) / (b - a)
 
     La distance verticale d entre les bases intérieures de deux verres empilés est alors obtenue en
-    ajoutant l'épaisseur horizontale du verre. À noter que si les angles sont trop horizontaux,
-    alors les verres s'empileront les bords des précédents, et ne voleront pas:
+    ajoutant l'épaisseur du verre e (et non e_h car la base n'est pas anglée). À noter que si les
+    angles sont trop horizontaux, alors les verres s'empileront les bords des précédents car ils ne
+    peuvent pas être magiquement suspendu en l'air:
 
-            d = { y_c + e_h   si y_c + e_h < h + e_h
-                { h + e_h     sinon
+            d = { y_c + e   si y_c + e < h + e
+                { h + e     sinon
     """
 
     h = (1 - a / b) * H
@@ -201,9 +228,9 @@ def calc_square_pyramid(
     a_e = a + 2 * (e_h - e_h / c)
     y_c = h * (a_e - a) / (b - a)
 
-    d = y_c + e_h
-    if d > h + e_h:
-        d = h + e_h
+    d = y_c + e
+    if d > h + e:
+        d = h + e
 
     # ------------------------------------------------
     # Déterminer le nombre de verre max. dans une pile
@@ -215,7 +242,7 @@ def calc_square_pyramid(
     verres empilés (égal à kd) la hauteur intérieur du dernier verre, puis l'épaisseur du verre
     pour prendre en compte le dernier verre correctement.
 
-            f(x) = h + xd + e_h
+            f(x) = h + xd + e
 
     Nous ajouterons également une vérification pour s'assurer que h soit inférieur à m la hauteur
     maximale.
@@ -223,19 +250,51 @@ def calc_square_pyramid(
     Nous pouvons désormais résoudre la hauteur maximale d'une pile. À noter que d > 0:
     
             f(x) <= m
-        <=> (h + e_h) + xd <= m
-        <=> (h + e_h) / d + x <= m / d
-        <=> x <= (m - h - e_h) / d
+        <=> (h + e) + xd <= m
+        <=> (h + e) / d + x <= m / d
+        <=> x <= (m - h - e) / d
 
     Enfin, on ajuste cette formule car nous avons un nombre entier de verres maximaux et obtenons
     p_m entier naturel la taille maximale d'une pile de verres:
     
-            p_m = ⌊(m - h - e_h) / d⌋
+            p_m = ⌊(m - h - e) / d⌋
     """
 
     if h > m or not d > 0:
         return None
-    p_m = int((m - h - e_h) / d)
+    p_m = int((m - h - e) / d)
+
+
+    # -----------------------------------------------------
+    # Déterminer les caractéristiques des piles nécéssaires
+    # -----------------------------------------------------
+    """
+    Pour déterminer les dimensions du placard, nous aurons besoin de déterminer la taille d'un
+    verre. Sa hauteur extérieur peut facilement être déterminée en ajoutant l'épaisseur du verre à
+    sa base -> (h + e). Nous avons cependant besoin de calculer la largeur extérieur de la base
+    la plus grande -> base extérieur. Nous devons simplement ajouter l'épaisseur horizontalle du*
+    verre aux deux bords:
+    
+            b_e = b + 2e_h
+    
+    Nous déterminons d'abord le nombre de piles qui doivent être créées. Pour ca, nous arrondissons
+    vers le haut la division du nombre de verres au nombre de verres que l'on peut mettre par pile.
+
+            p = ⌈n / p_m⌉
+
+    Ensuite, nous déterminons toutes les combinaisons possibles de grilles de verre. Pour chaque
+    combinaison de largeur et profondeur x y entiers naturels:
+
+    TODO
+    """
+
+    b_e = b + 2 * e_h
+    p = math.ceil(n / p_m)
+
+    # Trouver les facteurs premiers
+    glass_prime_factors = prime_factors(p)
+    # Déterminer toutes les combinaisons possibles de ces variables
+    cmb = pairs(glass_prime_factors)
 
 
     return 0, 0, 0
