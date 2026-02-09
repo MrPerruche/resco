@@ -56,14 +56,13 @@ def calc_square_pyramid(
     Returns:
         list[tuple[int, int, int]]: Dimensions X Y Z occupés par les verres de chaque arrangement
             de verre dans l'étagère optimale
-        None: Les paramètres ne permettent pas de satisfaire les \
-            conditions imposées
+        None: Les paramètres ne permettent pas de satisfaire les conditions imposées
     """
 
     # Alias
     b = pyramid_top
     H = pyramid_height
-    
+
     n = glasses
     e = edge_thickness
 
@@ -108,6 +107,9 @@ def calc_square_pyramid(
         return None
     a = math.sqrt(a2)
 
+    # En théorie, a ne devrait pas être supérieur à b. Nous nous assurons néanmoins que cela est vrai
+    assert a < b
+
     # S'assurer que la formule est correcte en retrouvant le volume à partir de la base
     if DEBUG_MODE:
         sub_pyramid_volume = (H / 3) * (b * b + a2)
@@ -116,7 +118,7 @@ def calc_square_pyramid(
             f"Formule de la taille de la base intérieur incorrecte: {full_pyramid_volume - sub_pyramid_volume=}"
 
 
-    # ------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------------
     # Déterminer l'épaisseur horizontale du verre puis l'espace entre différent verres de la pile
     # -------------------------------------------------------------------------------------------
     """
@@ -177,7 +179,7 @@ def calc_square_pyramid(
 
     où y appartient à [0, h].
 
-    Le point de contact y_c est défini par :
+    Le point de contact SELON LA PENTE y_c est défini par :
 
             f(y_c) = a_e
         <=> a + (b - a) * (y_c / h) = a_e
@@ -185,10 +187,12 @@ def calc_square_pyramid(
         <=> (b - a) * y_c = h(a_e - a)
         <=> y_c = h * (a_e - a) / (b - a)
 
-    La distance verticale d entre les bases intérieures de deux verres empilés est alors obtenue
-    en ajoutant l'épaisseur horizontale du verre :
+    La distance verticale d entre les bases intérieures de deux verres empilés est alors obtenue en
+    ajoutant l'épaisseur horizontale du verre. À noter que si les angles sont trop horizontaux,
+    alors les verres s'empileront les bords des précédents, et ne voleront pas:
 
-            d = y_c + e_h
+            d = { y_c + e_h   si y_c + e_h < h + e_h
+                { h + e_h     sinon
     """
 
     h = (1 - a / b) * H
@@ -196,7 +200,42 @@ def calc_square_pyramid(
     e_h = e / math.atan(c)
     a_e = a + 2 * (e_h - e_h / c)
     y_c = h * (a_e - a) / (b - a)
+
     d = y_c + e_h
+    if d > h + e_h:
+        d = h + e_h
+
+    # ------------------------------------------------
+    # Déterminer le nombre de verre max. dans une pile
+    # ------------------------------------------------
+
+    """
+    Nous devons déterminer le nombre de verres maximaux dans une pile. Nous créerons f(x) pour
+    calculer la hauteur d'une pile. Il faut ajouter à la hauteur laissé par l espace entre les
+    verres empilés (égal à kd) la hauteur intérieur du dernier verre, puis l'épaisseur du verre
+    pour prendre en compte le dernier verre correctement.
+
+            f(x) = h + xd + e_h
+
+    Nous ajouterons également une vérification pour s'assurer que h soit inférieur à m la hauteur
+    maximale.
+
+    Nous pouvons désormais résoudre la hauteur maximale d'une pile. À noter que d > 0:
+    
+            f(x) <= m
+        <=> (h + e_h) + xd <= m
+        <=> (h + e_h) / d + x <= m / d
+        <=> x <= (m - h - e_h) / d
+
+    Enfin, on ajuste cette formule car nous avons un nombre entier de verres maximaux et obtenons
+    p_m entier naturel la taille maximale d'une pile de verres:
+    
+            p_m = ⌊(m - h - e_h) / d⌋
+    """
+
+    if h > m or not d > 0:
+        return None
+    p_m = int((m - h - e_h) / d)
 
 
     return 0, 0, 0
