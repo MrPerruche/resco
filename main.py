@@ -12,10 +12,10 @@ import math
 from dataclasses import dataclass
 from functools import lru_cache  # Memoization afin d'améliorer les performances en sauvegardant
                                  # les résultats des fonctions "déterministiques"
-from typing import Any
+from typing import Any, Callable  # Gardons quelque chose de propre
 
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 
 @lru_cache(maxsize=1100)
@@ -136,6 +136,10 @@ def calc_square_pyramid(
     une solution.
     """
 
+    # Vérification précoce pour éviter des divisions par zéro
+    if H == 0:
+        return None
+
     # Calculer la base intérieur de la pyramide (aire puis largeur)
     a2 = (b ** 2) - (3 * v / H)
     if a2 < 0:  # Vérifier que la formule ne va pas produire un nombre imaginaire
@@ -146,11 +150,11 @@ def calc_square_pyramid(
     assert a < b
 
     # S'assurer que la formule est correcte en retrouvant le volume à partir de la base
-    if DEBUG_MODE:
-        sub_pyramid_volume = (H / 3) * (b * b + a2)
-        full_pyramid_volume = (1/3) * b * b * H
-        assert math.isclose(full_pyramid_volume - sub_pyramid_volume, v), \
-            f"Formule de la taille de la base intérieur incorrecte: {full_pyramid_volume - sub_pyramid_volume=}, {a, b=}"
+    # if DEBUG_MODE:
+    #     sub_pyramid_volume = (H / 3) * (b * b + a2)
+    #     full_pyramid_volume = (1/3) * b * b * H
+    #     assert math.isclose(full_pyramid_volume - sub_pyramid_volume, v), \
+    #         f"Formule de la taille de la base intérieur incorrecte: {full_pyramid_volume - sub_pyramid_volume=}, {a, b=}"
 
 
     # -------------------------------------------------------------------------------------------
@@ -313,6 +317,8 @@ def calc_square_pyramid(
 
     f = lambda x: h + x*d + e
     b_e = b + 2 * e_h
+    if p_m == 0:  # Eviter la division par 0
+        return None
     n_p = math.ceil(n / p_m)
     p = math.ceil(n / n_p)
 
@@ -352,6 +358,11 @@ def calc_square_pyramid(
 
     return resultats
 
+
+# -----------------------------------------------
+# Fonctions liés à l'interprétation des résultats
+# -----------------------------------------------
+
 def line_by_line_repr(l):
     return '[\n\t' + '\n\t'.join([str(elem) for elem in l]) + ']'
 
@@ -365,53 +376,30 @@ def fetch_result(results: list[Resultat] | None) -> Resultat | None:
                             # grilles très longues et peu profondes et les derniers des
                             # grilles plus équilibrées.
 
+    # AJOUTEZ DES CONDITIONS ICI: EX. ANGLE MINIMAL, RAPPORT BASE / HAUT MINIMAL
     if (True
         # Par ex. (et car 90° -> cube): `and retained.variables['theta'] > 60`
-    ):  # Ajouter des conditions ici.
+    ):
         return retained
     else:
         return None
 
 
-if __name__ == "__main__":
+# ----------------------------------
+# TESTS
+# ----------------------------------
 
-    DEBUG_MODE=False
-
-    print("Essai de la tentative 1:")
-
-    """
-            v            = (H/3)(b² - a²)
-        <=> 3v           = h(b² - a²)
-        <=> 3v / (b²-a²) = h
+def basic_test():
+    # Entrées utilisateur
+    precision = int(input("Ecart entre les essais (1/1_000 cm) (Recommandé: 50-15)\n> "))
     
-    Dans cette tentative, b = 7cm et a = 4cm et v = 20cL = 200mL = 200cm²
-    """
-
-
-    print(line_by_line_repr(calc_square_pyramid(
-        pyramid_top=7,
-        pyramid_height=(3*200) / (7**2 - 4**2),
-        glasses=1000,
-        edge_thickness=0.2,  # 2mm = 0.2cm
-        target_glass_volume=200,
-        max_height=40
-    )))
-    
-    print(line_by_line_repr(calc_square_pyramid(
-        pyramid_top=10.8,
-        pyramid_height=(3*202.1) / (10.8**2 - 3.6**2),
-        glasses=1000,
-        edge_thickness=0.2,  # 2mm = 0.2cm
-        target_glass_volume=200,
-        max_height=40
-    )))
-
-
-    precision = 50
+    # Algorithme
     resultats = []
-    for i in range(1_000, 30_000, precision):
-        print(f"New iteration... {i / 1_000}")
-        for j in range(1_000, 30_000, precision):
+    for i in range(0, 30_000, precision):
+        print(f"Nouvelle étape de recherche... {i / 1_000 = }")
+        for j in range(0, 30_000, precision):
+            
+            # Effectuer les calculs
             result: list[Resultat] | None = calc_square_pyramid(
                 pyramid_top=i/1000,
                 pyramid_height=j/1000,
@@ -420,8 +408,12 @@ if __name__ == "__main__":
                 target_glass_volume=200,
                 max_height=40
             )
+            
+            # None est renvoyé si les entrées n'aboutissent pas à une solution. On passe
             if result is None:
                 continue
+
+            # On prend le dernier resultat si les conditions sont remplies
             taken_result: Resultat = result[-1]
             if (
                 True
@@ -429,6 +421,163 @@ if __name__ == "__main__":
             ):
                 resultats.append(taken_result)
 
+    # On trie et affiche les 10 meilleurs résultats
     resultats.sort(key=lambda x: x.volume)
+    print('\n'.join([f'#{i}: {elem}' for i, elem in enumerate(resultats[:10])]))
 
-    print(line_by_line_repr(resultats[:10]))
+
+
+def bin_like_test():
+    precision = int(input("Nombre d'essais par variable par étape de recherche (itérations -> x²) (recommandé: 100 - 1_000)\n> "))
+    search_depth = int(input("Nombres d'étapes de recherches (profondeur) (recommandé: 5 - 10)\n> "))
+    assert precision >= 10, "Précision insuffisante"
+    assert search_depth >= 1, "Nombre d'étapes de recherches (profondeur) insuffisant."
+
+    # Préparer les variables
+    pyramid_top_range = (0, 50)
+    pyramid_height_range = (0, 50)
+    old_range = 50
+    scan_width = 3
+
+    # Afficher des informations à l'utilisateur...
+    # Estimation de la précision
+    final_range = old_range * ((scan_width / (precision - 1)) ** search_depth)
+    final_step = final_range / (precision - 1)
+    estimated_precision = math.log10(final_step)
+    # Affichage
+    print(f"Début... {precision**2*search_depth:,} tests seront effectués. Précision estimé: 10^{estimated_precision} cm")
+    if estimated_precision < -14:
+        print("Précision extrême. Les flottants à double précision risque de ne pas être assez précis.")
+
+    # Algorithme de recherche
+    pyramid_top_range = (0, 50)
+    pyramid_height_range = (0, 50)
+    best_result = None
+    for i in range(search_depth):
+        print(f"Nouvelle étape de recherche... Profondeur {i+1} / {search_depth}")
+        # Calculer le nouveau meilleur résultat...
+        best_result = run_tests(
+            precision,
+            pyramid_top_range,
+            pyramid_height_range
+        )
+        b = best_result.variables['b']
+        H = best_result.variables['H']
+        # Redéfinir le rayon de recherche
+        # 1.5 pour ajouter de la marge. En théorie, 0.5 pourrais fonctionner.
+        old_range = pyramid_top_range[1] - pyramid_top_range[0]
+        step = old_range / (precision - 1)
+
+        new_range = scan_width * step  # Multiplier pour tester les voisins (évite de louper la solution)
+
+        pyramid_top_range = (
+            b - new_range / 2,
+            b + new_range / 2
+        )
+
+        pyramid_height_range = (
+            H - new_range / 2,
+            H + new_range / 2
+        )
+
+    # Désormais best_result est le meilleur résultat. On peut afficher
+    print(f'=== RESULTAT TROUVE ===\n{best_result}')
+
+
+def run_tests(
+    precision: int,
+    pyramid_top_range: tuple[float, float],
+    pyramid_height_range: tuple[float, float]
+) -> Resultat:
+    # Calculer les pas
+    pyramid_top_step = (pyramid_top_range[1] - pyramid_top_range[0]) / (precision - 1)
+    pyramid_height_step = (pyramid_height_range[1] - pyramid_height_range[0]) / (precision - 1)
+
+    # Tester toutes les combinaisons
+    resultats = []
+    for i in range(precision):
+        for j in range(precision):
+            result = fetch_result(calc_square_pyramid(
+                pyramid_top=pyramid_top_range[0] + pyramid_top_step * i,
+                pyramid_height=pyramid_height_range[0] + pyramid_height_step * j,
+                glasses=1000,
+                edge_thickness=0.2,
+                target_glass_volume=200,
+                max_height=40
+            ))
+            # None est renvoyé si les entrées n'aboutissent pas à une solution. On passe
+            if result is not None:
+                resultats.append(result)
+
+    # Retourner le meilleur resultat
+    resultats.sort(key=lambda x: x.volume)
+    return resultats[1]
+
+# ----------------------
+
+# Ansi escape codes
+FM_CLEAR = '\x1b[0m'
+FM_INVERSE = '\x1b[7m'
+
+def main():
+
+    DEBUG_MODE=False
+
+    """
+    ##
+    ANCIENS ESSAIS MANUELS DE PRECENDENTS RESULTATS
+    ##
+    
+            v            = (H/3)(b² - a²)
+        <=> 3v           = h(b² - a²)
+        <=> 3v / (b²-a²) = h
+    
+    Dans cette tentative, b = 7cm et a = 4cm et v = 20cL = 200mL = 200cm²
+    ```
+    # Premier essai -> ~81k cm3?
+    print("Premier essai:")
+    print(line_by_line_repr(calc_square_pyramid(
+        pyramid_top=7,
+        pyramid_height=(3*200) / (7**2 - 4**2),
+        glasses=1000,
+        edge_thickness=0.2,  # 2mm = 0.2cm
+        target_glass_volume=200,
+        max_height=40
+    )))
+
+    # Essai d'Edgar -> ~32k cm3
+    print("Essai d'Edgar:")
+    print(line_by_line_repr(calc_square_pyramid(
+        pyramid_top=10.8,
+        pyramid_height=(3*202.1) / (10.8**2 - 3.6**2),
+        glasses=1000,
+        edge_thickness=0.2,  # 2mm = 0.2cm
+        target_glass_volume=200,
+        max_height=40
+    )))
+    ```
+    """
+
+    test_type = input(f"""\
+Script python écrit dans le cadre du projet ResCo.
+License MIT. Voir le fichier LICENSE.
+
+Options:
+{FM_INVERSE}BASIQUE{FM_CLEAR} Essaie aveuglement des millions de possibilités.
+{FM_INVERSE}BINAIRE{FM_CLEAR} Recherche des milliers ou millions de possibiliés en divisant petit à petit le rayon de recherche
+
+> """)
+    print('\n')  # 2 new lines
+
+    match test_type:
+        case 'BASIQUE':
+            basic_test()
+        case 'BINAIRE':
+            bin_like_test()
+        case _:
+            print(f'{FM_INVERSE}INVALIDE. REESSAYEZ.{FM_CLEAR}\n\n')
+            main()
+
+
+if __name__ == "__main__":
+    main()
