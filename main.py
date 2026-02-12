@@ -15,7 +15,7 @@ from functools import lru_cache  # Memoization afin d'améliorer les performance
 from typing import Any, Callable  # Gardons quelque chose de propre
 
 
-DEBUG_MODE = False
+DEBUG_LEVEL = 0
 
 
 @lru_cache(maxsize=1100)
@@ -70,6 +70,16 @@ class Resultat:
     max_glass_per_pile: int
     variables: dict[str, Any]
 
+    def __str__(self) -> str:
+        longest_var = max([len(k) for k in self.variables])
+        return f"""\
+Dimensions X Y Z   : {' x '.join([f'{dim} cm' for dim in self.dim])}
+Volume             : {self.volume} cm3
+Grille proposé     : {self.grid[0]} x {self.grid[1]} ({self.grid[0] * self.grid[1]} piles)
+Verres / piles max : {self.max_glass_per_pile}
+Variables... {''.join([f'\n  - {k + ' ' * (longest_var - len(k) + 1)}: {v!r}' for k, v in self.variables.items()])}\
+"""
+
 
 def calc_square_pyramid(
     pyramid_top: float,
@@ -79,6 +89,8 @@ def calc_square_pyramid(
     edge_thickness: float,
     target_glass_volume: float,  # cm3 -> mL
     max_height: float,
+
+    parameters: 'Parameters'
 ) -> list[Resultat] | None:
 
     """Calcule les dimensions de la zone occupé par les verres tel que les conditions
@@ -150,12 +162,13 @@ def calc_square_pyramid(
     assert a < b
 
     # S'assurer que la formule est correcte en retrouvant le volume à partir de la base
-    # if DEBUG_MODE:
-    #     sub_pyramid_volume = (H / 3) * (b * b + a2)
-    #     full_pyramid_volume = (1/3) * b * b * H
-    #     assert math.isclose(full_pyramid_volume - sub_pyramid_volume, v), \
-    #         f"Formule de la taille de la base intérieur incorrecte: {full_pyramid_volume - sub_pyramid_volume=}, {a, b=}"
-
+    if DEBUG_LEVEL >= 1:
+        # Vérification du volume
+        calc_v = (H / 3) * (b**2 - a**2)
+        assert math.isclose(calc_v, v, rel_tol=1e-9), \
+            f"Volume incohérent: {calc_v=} != {v=}"
+        if DEBUG_LEVEL >= 2:
+            print(f"Calcul du volume OK: {b, a, H, calc_v = }")
 
     # -------------------------------------------------------------------------------------------
     # Déterminer l'épaisseur horizontale du verre puis l'espace entre différent verres de la pile
@@ -194,8 +207,7 @@ def calc_square_pyramid(
     
             cos theta = côté adjacent / hypoténuse = e / e_h
         <=> e_h = e / cos(theta)
-        <=> e_h = e / arctan(d_y / d_x)
-        <=> e_h = e / arctan(c)
+        <=> e_h = e * sqrt(1 + c**2)
 
     Avec e réel l'épaisseur du verre et e_h réel l'épaisseur horizontale du verre, on calcule la
     largeur extérieur de la base inférieur.
@@ -236,9 +248,19 @@ def calc_square_pyramid(
     """
 
     h = (1 - a / b) * H
+
+
+    # Vérification de la hauteur
+    if DEBUG_LEVEL >= 1:
+        # h = (1 - a/b) * H  <=>  a/b = (H - h)/H
+        assert math.isclose(a/b, (H - h)/H, rel_tol=1e-9), \
+            "Erreur dans la hauteur du frustum"
+        if DEBUG_LEVEL >= 2:
+            print(f"Calcul de la hauteur OK: {a/b = } = {(H - h)/H = }")
+
     c = 2 * H / b
-    e_h = e / math.atan(c)
-    theta = e / e_h  # Utilisé pour plus tard
+    e_h = e * math.sqrt(1 + c**2)
+    theta = math.atan(c)  # Utilisé pour plus tard
     a_e = a + 2 * (e_h - e_h / c)
     if a_e <= a:
         return None
@@ -263,22 +285,39 @@ def calc_square_pyramid(
     Nous ajouterons également une vérification pour s'assurer que h soit inférieur à m la hauteur
     maximale.
 
-    Nous pouvons désormais résoudre la hauteur maximale d'une pile. À noter que d > 0:
+    À noter que d > 0 and h <= m.
+
+    Nous pouvons désormais résoudre la hauteur maximale d'une pile. À noter que d > 0.
+    Nous avons un paramètre qui détermine si l'on doit rajouter un espace supplémentaire. Dans le
+    cas ou celui ci n'est pas activé, alors nous devons résoudre f(x) <= m:
     
             f(x) <= m
         <=> (h + e) + xd <= m
         <=> (h + e) / d + x <= m / d
         <=> x <= (m - h - e) / d
 
+    Si l’on souhaite conserver un espace supplémentaire afin de pouvoir retirer le verre supérieur,
+    il ne suffit pas de réserver la hauteur d’un verre complet. En effet, lorsque les verres sont
+    empilés, chaque nouveau verre n’ajoute qu’une hauteur d, inférieure à sa hauteur extérieure
+    réelle h+e, en raison de l’imbrication. La hauteur "perdue" à chaque empilement vaut donc
+    (h+e)−d.
+
+            f(x) + ((h + e) - d) <= m
+        <=> (h + e) + xd + ((h + e) - d) <= m
+        <=> 2(h + e) + (x - 1)d <= m
+        <=> x - 1 <= (m - 2h - 2e) / d
+        <=> x <= (m - 2h - 2e) / d + 1
+
     Enfin, on ajuste cette formule car nous avons un nombre entier de verres maximaux et obtenons
     p_m entier naturel la taille maximale d'une pile de verres:
     
-            p_m = ⌊(m - h - e) / d⌋
+            Ne pas laisser d'espace -> p_m = ⌊(m - h - e) / d⌋
+            Laisser un espace       -> p_m = ⌊(m - 2h - 2e) / d + 1⌋
     """
 
     if h > m or not d > 0:
         return None
-    p_m = int((m - h - e) / d)
+    p_m = int((m - 2*h - 2*e) / d + 1) if parameters.extra_space else int((m - h - e) / d)
 
 
     # -----------------------------------------------------
@@ -306,13 +345,15 @@ def calc_square_pyramid(
 
     Ensuite, nous déterminons à l'aide d'un algorithme basé sur la décomposition en facteurs
     premiers toutes les combinaisons possibles de grilles de verre. (dans le code, nous utilisons
-    cette algorithme avec `pairs(prime_factors(p))`. Pour chaque combinaison de largeur et
+    cette algorithme avec `pairs(prime_factors(p))`). Pour chaque combinaison de largeur et
     profondeur x y entiers naturels:
 
     Nous déterminons la hauteur et profondeur de l'armore:
             s_x = b_e * x
             s_y = b_e * y
-            s_y = f(p)
+            
+            Ne pas laisser un espace -> s_z = f(p)
+            Laisser un espace        -> s_z = f(p) + ((h + e) - d)
     """
 
     f = lambda x: h + x*d + e
@@ -330,7 +371,8 @@ def calc_square_pyramid(
 
     resultats = []
     for x, y in cmb:
-        dim = (b_e * x, b_e * y, f(p))
+        dim_z = f(p) + ((h+e) - d) if parameters.extra_space else f(p)
+        dim = (b_e * x, b_e * y, dim_z)
         resultats.append(Resultat(
             dim=dim,
             volume=dim[0]*dim[1]*dim[2],
@@ -359,6 +401,40 @@ def calc_square_pyramid(
     return resultats
 
 
+
+# -----------------------------------------------
+# Entrée utilisateur
+# -----------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class Parameters:
+
+    min_angle: float | None
+    min_base_ratio: float | None
+    extra_space: bool
+
+    @staticmethod
+    def input() -> 'Parameters':
+        """Créée un nouvelle instance de la classe à partir d'entrées utilisateur"""
+
+        min_angle_in = input("Entrer l'angle minimal (en °) (vide -> aucune contrainte)\n> ").strip()
+        min_angle = float(min_angle_in) if min_angle_in else None
+
+        min_base_ratio_in = input("Entrez un ratio minimal haut : bas (x > 1) (vide -> aucune contrainte)\n> ").strip()
+        min_base_ratio = float(min_base_ratio_in) if min_base_ratio_in else None
+        assert min_base_ratio is None or min_base_ratio > 1
+
+        extra_space_in = input("Laisser un espace supplémentaire pour pouvoir lever les verres tout en haut de la pile ? (Y/n) (par défault: n)\n> ").strip().lower()
+        assert len(extra_space_in) < 2, "Veuillez entrer Y ou n"
+        extra_space = extra_space_in == 'y'
+
+        return Parameters(
+            min_angle=min_angle,
+            min_base_ratio=min_base_ratio,
+            extra_space=extra_space
+        )
+
+
 # -----------------------------------------------
 # Fonctions liés à l'interprétation des résultats
 # -----------------------------------------------
@@ -367,22 +443,24 @@ def line_by_line_repr(l):
     return '[\n\t' + '\n\t'.join([str(elem) for elem in l]) + ']'
 
 
-def fetch_result(results: list[Resultat] | None) -> Resultat | None:
+def fetch_result(results: list[Resultat] | None, parameters: Parameters) -> Resultat | None:
+    """Interpréte les résultats avec des paramètres donnés"""
 
     if results is None:
         return None
 
-    retained = results[-1]  # Avec l'implémentation actuelle, les premiers résultats sont des
-                            # grilles très longues et peu profondes et les derniers des
-                            # grilles plus équilibrées.
+    retained = results[0]  # Avec l'implémentation actuelle, les derniers résultats sont des
+                           # grilles très longues et peu profondes et les premiers des grilles
+                           # plus équilibrées.
+    var = retained.variables
 
-    # AJOUTEZ DES CONDITIONS ICI: EX. ANGLE MINIMAL, RAPPORT BASE / HAUT MINIMAL
-    if (True
-        # Par ex. (et car 90° -> cube): `and retained.variables['theta'] > 60`
-    ):
-        return retained
-    else:
+    if parameters.min_angle is not None and var['theta'] < parameters.min_angle:
         return None
+
+    if parameters.min_base_ratio is not None and var['b'] / var['a'] > parameters.min_base_ratio:
+        return None
+
+    return retained
 
 
 # ----------------------------------
@@ -392,46 +470,42 @@ def fetch_result(results: list[Resultat] | None) -> Resultat | None:
 def basic_test():
     # Entrées utilisateur
     precision = int(input("Ecart entre les essais (1/1_000 cm) (Recommandé: 50-15)\n> "))
-    
+    parameters = Parameters.input()
+
     # Algorithme
     resultats = []
     for i in range(0, 30_000, precision):
         print(f"Nouvelle étape de recherche... {i / 1_000 = }")
         for j in range(0, 30_000, precision):
-            
+
             # Effectuer les calculs
-            result: list[Resultat] | None = calc_square_pyramid(
+            result: Resultat | None = fetch_result(calc_square_pyramid(
                 pyramid_top=i/1000,
                 pyramid_height=j/1000,
                 glasses=1000,
                 edge_thickness=0.2,
                 target_glass_volume=200,
-                max_height=40
-            )
-            
-            # None est renvoyé si les entrées n'aboutissent pas à une solution. On passe
+                max_height=40,
+                parameters=parameters
+            ), parameters)
+
             if result is None:
                 continue
 
-            # On prend le dernier resultat si les conditions sont remplies
-            taken_result: Resultat = result[-1]
-            if (
-                True
-                # and taken_result.variables['theta'] > 60
-            ):
-                resultats.append(taken_result)
+            resultats.append(result)
 
     # On trie et affiche les 10 meilleurs résultats
     resultats.sort(key=lambda x: x.volume)
-    print('\n'.join([f'#{i}: {elem}' for i, elem in enumerate(resultats[:10])]))
+    # print('\n'.join([f'#{i}: {elem}' for i, elem in enumerate(resultats[:10])]))
 
 
 
 def bin_like_test():
     precision = int(input("Nombre d'essais par variable par étape de recherche (itérations -> x²) (recommandé: 100 - 1_000)\n> "))
-    search_depth = int(input("Nombres d'étapes de recherches (profondeur) (recommandé: 5 - 10)\n> "))
     assert precision >= 10, "Précision insuffisante"
+    search_depth = int(input("Nombres d'étapes de recherches (profondeur) (recommandé: 5 - 10)\n> "))
     assert search_depth >= 1, "Nombre d'étapes de recherches (profondeur) insuffisant."
+    parameters = Parameters.input()
 
     # Préparer les variables
     pyramid_top_range = (0, 50)
@@ -459,7 +533,8 @@ def bin_like_test():
         best_result = run_tests(
             precision,
             pyramid_top_range,
-            pyramid_height_range
+            pyramid_height_range,
+            parameters
         )
         b = best_result.variables['b']
         H = best_result.variables['H']
@@ -481,13 +556,14 @@ def bin_like_test():
         )
 
     # Désormais best_result est le meilleur résultat. On peut afficher
-    print(f'=== RESULTAT TROUVE ===\n{best_result}')
+    print(f'\n=== RESULTAT TROUVE ===\n\n{best_result}')
 
 
 def run_tests(
     precision: int,
     pyramid_top_range: tuple[float, float],
-    pyramid_height_range: tuple[float, float]
+    pyramid_height_range: tuple[float, float],
+    parameters: Parameters
 ) -> Resultat:
     # Calculer les pas
     pyramid_top_step = (pyramid_top_range[1] - pyramid_top_range[0]) / (precision - 1)
@@ -503,8 +579,9 @@ def run_tests(
                 glasses=1000,
                 edge_thickness=0.2,
                 target_glass_volume=200,
-                max_height=40
-            ))
+                max_height=40,
+                parameters=parameters
+            ), parameters)
             # None est renvoyé si les entrées n'aboutissent pas à une solution. On passe
             if result is not None:
                 resultats.append(result)
@@ -529,8 +606,8 @@ def main():
     ##
     
             v            = (H/3)(b² - a²)
-        <=> 3v           = h(b² - a²)
-        <=> 3v / (b²-a²) = h
+        <=> 3v           = H(b² - a²)
+        <=> 3v / (b²-a²) = H
     
     Dans cette tentative, b = 7cm et a = 4cm et v = 20cL = 200mL = 200cm²
     ```
@@ -554,6 +631,19 @@ def main():
         edge_thickness=0.2,  # 2mm = 0.2cm
         target_glass_volume=200,
         max_height=40
+    )))
+
+    # Essai de Matei
+    print("Essai de Matei:")
+    b, a, v = 7.06, 1, 200
+    H = (3*v) / (b**2 - a**2)
+    print(line_by_line_repr(calc_square_pyramid(
+        pyramid_top=b,
+        pyramid_height=H,
+        glasses=1000,
+        edge_thickness=0.2,  # 2mm = 0.2cm
+        target_glass_volume=200,
+        max_height=40,
     )))
     ```
     """
