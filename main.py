@@ -68,16 +68,17 @@ class Resultat:
     volume: float
     grid: tuple[int, int]
     max_glass_per_pile: int
-    variables: dict[str, Any]
+    variables: dict[str, tuple[Any, str]]
 
     def __str__(self) -> str:
         longest_var = max([len(k) for k in self.variables])
+        longest_val = max([len(str(v[0])) for v in self.variables.values()])
         return f"""\
 Dimensions X Y Z   : {' x '.join([f'{dim} cm' for dim in self.dim])}
 Volume             : {self.volume} cm3
 Grille proposé     : {self.grid[0]} x {self.grid[1]} ({self.grid[0] * self.grid[1]} piles)
 Verres / piles max : {self.max_glass_per_pile}
-Variables... {''.join([f'\n  - {k + ' ' * (longest_var - len(k) + 1)}: {v!r}' for k, v in self.variables.items()])}\
+Variables... {''.join([f'\n  - {k + ' ' * (longest_var - len(k) + 1)}: {v[0]!r}{' '*(longest_val - len(str(v[0])) + 1)} ({v[1]})' for k, v in self.variables.items()])}\
 """
 
 
@@ -380,20 +381,22 @@ def calc_square_pyramid(
             max_glass_per_pile=p,
             variables={
                 # Variables de taille
-                'b': b,
-                'b_e': b_e,
-                'a': a,
-                'a_e': a_e,
-                'e': e,
-                'e_h': e_h,
+                'b': (b, 'Base haute intérieur (cm)'),
+                'b_e': (b_e, 'Base haute extérieur (cm)'),
+                'a': (a, 'Base basse intérieure (cm)'),
+                'a_e': (a_e, 'Base basse extérieure (cm)'),
+                'h': (h, 'Hauteur intérieur (cm)'),
+                # Caractéristiques peut utiles
+                'H': (H, 'Hauteur de la pyramide non-tronquée (cm)'),
+                'e': (e, 'Epaisseur du verre (cm)'),
+                'e_h': (e_h, 'Epaisseur du verre horizontale (cm)'),
                 # Caractéristiques des piles
-                'n_p': n_p,
-                'p': p,
-                'H': H,
-                'h': h,
+                'n_p': (n_p, 'Nombre de piles'),
+                'p': (p, 'Nombre de verres par pile'),
+                'n_p*p': (n_p*p, 'Nombre total de verres qui peuvent être placés'),
                 # Autres informations
-                'theta_pi': theta,  # Angle de la paroi du verre
-                'theta': math.degrees(theta)  # 90° -> a = b
+                'theta_pi': (theta, 'Angle de la paroi du verre (r)'),  # Angle de la paroi du verre
+                'theta': (math.degrees(theta), 'Angle de la paroi du verre (°) (90° = vertical)')  # 90° -> a = b
             }
         ))
         
@@ -454,10 +457,10 @@ def fetch_result(results: list[Resultat] | None, parameters: Parameters) -> Resu
                            # plus équilibrées.
     var = retained.variables
 
-    if parameters.min_angle is not None and var['theta'] < parameters.min_angle:
+    if parameters.min_angle is not None and var['theta'][0] < parameters.min_angle:
         return None
 
-    if parameters.min_base_ratio is not None and var['b'] / var['a'] > parameters.min_base_ratio:
+    if parameters.min_base_ratio is not None and var['b'][0] / var['a'][0] > parameters.min_base_ratio:
         return None
 
     return retained
@@ -536,8 +539,8 @@ def bin_like_test():
             pyramid_height_range,
             parameters
         )
-        b = best_result.variables['b']
-        H = best_result.variables['H']
+        b = best_result.variables['b'][0]
+        H = best_result.variables['H'][0]
         # Redéfinir le rayon de recherche
         # 1.5 pour ajouter de la marge. En théorie, 0.5 pourrais fonctionner.
         old_range = pyramid_top_range[1] - pyramid_top_range[0]
