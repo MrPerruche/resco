@@ -452,7 +452,7 @@ def fetch_result(results: list[Resultat] | None, parameters: Parameters) -> Resu
     if results is None:
         return None
 
-    retained = results[0]  # Avec l'implémentation actuelle, les derniers résultats sont des
+    retained = results[-1]  # Avec l'implémentation actuelle, les derniers résultats sont des
                            # grilles très longues et peu profondes et les premiers des grilles
                            # plus équilibrées.
     var = retained.variables
@@ -460,7 +460,7 @@ def fetch_result(results: list[Resultat] | None, parameters: Parameters) -> Resu
     if parameters.min_angle is not None and var['theta'][0] < parameters.min_angle:
         return None
 
-    if parameters.min_base_ratio is not None and var['b'][0] / var['a'][0] > parameters.min_base_ratio:
+    if parameters.min_base_ratio is not None and var['b_e'][0] / var['a_e'][0] > parameters.min_base_ratio:
         return None
 
     return retained
@@ -499,6 +499,7 @@ def basic_test():
 
     # On trie et affiche les 10 meilleurs résultats
     resultats.sort(key=lambda x: x.volume)
+    print(f'\n=== RESULTAT TROUVE ===\n\n{resultats[0]}')
     # print('\n'.join([f'#{i}: {elem}' for i, elem in enumerate(resultats[:10])]))
 
 
@@ -591,7 +592,7 @@ def run_tests(
 
     # Retourner le meilleur resultat
     resultats.sort(key=lambda x: x.volume)
-    return resultats[1]
+    return resultats[0]
 
 # ----------------------
 
@@ -600,8 +601,6 @@ FM_CLEAR = '\x1b[0m'
 FM_INVERSE = '\x1b[7m'
 
 def main():
-
-    DEBUG_MODE=False
 
     """
     ##
@@ -662,7 +661,7 @@ Options:
 > """)
     print('\n')  # 2 new lines
 
-    match test_type:
+    match test_type.strip().upper():
         case 'BASIQUE':
             basic_test()
         case 'BINAIRE':
