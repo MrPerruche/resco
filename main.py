@@ -10,8 +10,7 @@ Z -> HAUTEUR
 
 import math
 from dataclasses import dataclass
-from functools import lru_cache  # Memoization afin d'améliorer les performances en sauvegardant
-                                 # les résultats des fonctions "déterministiques"
+from functools import lru_cache, partial  # Memoization et optimizations
 from typing import Any, Callable  # Gardons quelque chose de propre
 
 
@@ -34,7 +33,7 @@ def prime_factors(n: int) -> tuple[int]:
     return tuple(result)
 
 @lru_cache(maxsize=1100)
-def pairs(elements: tuple[int]) -> set[tuple[int, int]]:
+def pairs(elements: tuple[int, ...]) -> set[tuple[int, int]]:
     """
     Algorithmes qui donne toutes les paires que l'on peut créer à partir de n tel que
     x * y = produits de p
@@ -357,7 +356,8 @@ def calc_square_pyramid(
             Laisser un espace        -> s_z = f(p) + ((h + e) - d)
     """
 
-    f = lambda x: h + x*d + e
+    def f(x):
+        return h + x*d + e
     b_e = b + 2 * e_h
     if p_m == 0:  # Eviter la division par 0
         return None
@@ -374,30 +374,37 @@ def calc_square_pyramid(
     for x, y in cmb:
         dim_z = f(p) + ((h+e) - d) if parameters.extra_space else f(p)
         dim = (b_e * x, b_e * y, dim_z)
+
+        variables = {
+            # Variables de taille
+            'b': (b, 'Base haute intérieur (cm)'),
+            'b_e': (b_e, 'Base haute extérieur (cm)'),
+            'a': (a, 'Base basse intérieure (cm)'),
+            'a_e': (a_e, 'Base basse extérieure (cm)'),
+            'h': (h, 'Hauteur intérieur (cm)'),
+            'h+e': (h+e, 'Hauteur extérieur (cm)'),
+            # Caractéristiques peut utiles
+            'H': (H, 'Hauteur de la pyramide non-tronquée (cm)'),
+            'e': (e, 'Epaisseur du verre (cm)'),
+            'e_h': (e_h, 'Epaisseur du verre horizontale (cm)'),
+            # Caractéristiques des piles
+            'n_p': (n_p, 'Nombre de piles'),
+            'p': (p, 'Nombre de verres par pile'),
+            'n_p*p': (n_p*p, 'Nombre total de verres qui peuvent être placés'),
+            'h+e-d': (h+e-d, 'Espace laissé afin de lever les verres les plus haut (cm)'),
+            # Autres informations
+            'theta_pi': (theta, 'Angle de la paroi du verre (r)'),  # Angle de la paroi du verre
+            'theta': (math.degrees(theta), 'Angle de la paroi du verre (°) (90° = vertical)')  # 90° -> a = b
+        }
+        if not parameters.extra_space:
+            del variables['h+e-d']
+
         resultats.append(Resultat(
             dim=dim,
             volume=dim[0]*dim[1]*dim[2],
             grid=(x, y),
             max_glass_per_pile=p,
-            variables={
-                # Variables de taille
-                'b': (b, 'Base haute intérieur (cm)'),
-                'b_e': (b_e, 'Base haute extérieur (cm)'),
-                'a': (a, 'Base basse intérieure (cm)'),
-                'a_e': (a_e, 'Base basse extérieure (cm)'),
-                'h': (h, 'Hauteur intérieur (cm)'),
-                # Caractéristiques peut utiles
-                'H': (H, 'Hauteur de la pyramide non-tronquée (cm)'),
-                'e': (e, 'Epaisseur du verre (cm)'),
-                'e_h': (e_h, 'Epaisseur du verre horizontale (cm)'),
-                # Caractéristiques des piles
-                'n_p': (n_p, 'Nombre de piles'),
-                'p': (p, 'Nombre de verres par pile'),
-                'n_p*p': (n_p*p, 'Nombre total de verres qui peuvent être placés'),
-                # Autres informations
-                'theta_pi': (theta, 'Angle de la paroi du verre (r)'),  # Angle de la paroi du verre
-                'theta': (math.degrees(theta), 'Angle de la paroi du verre (°) (90° = vertical)')  # 90° -> a = b
-            }
+            variables=variables
         ))
         
 
@@ -423,7 +430,7 @@ class Parameters:
         min_angle_in = input("Entrer l'angle minimal (en °) (vide -> aucune contrainte)\n> ").strip()
         min_angle = float(min_angle_in) if min_angle_in else None
 
-        min_base_ratio_in = input("Entrez un ratio minimal haut : bas (x > 1) (vide -> aucune contrainte)\n> ").strip()
+        min_base_ratio_in = input("Entrez un ratio maximal haut : bas (x > 1) (vide -> aucune contrainte)\n> ").strip()
         min_base_ratio = float(min_base_ratio_in) if min_base_ratio_in else None
         assert min_base_ratio is None or min_base_ratio > 1
 
@@ -452,9 +459,15 @@ def fetch_result(results: list[Resultat] | None, parameters: Parameters) -> Resu
     if results is None:
         return None
 
-    retained = results[-1]  # Avec l'implémentation actuelle, les derniers résultats sont des
-                           # grilles très longues et peu profondes et les premiers des grilles
-                           # plus équilibrées.
+    retained = results[0]
+    rscore = abs(retained.dim[0] - retained.dim[1])
+    # On cherche la grille la plus équilibré
+    for result in results:
+        new_rscore = abs(result.dim[0] - result.dim[1])
+        if new_rscore < rscore:
+            retained = result
+            rscore = new_rscore
+
     var = retained.variables
 
     if parameters.min_angle is not None and var['theta'][0] < parameters.min_angle:
@@ -474,6 +487,14 @@ def basic_test():
     # Entrées utilisateur
     precision = int(input("Ecart entre les essais (1/1_000 cm) (Recommandé: 50-15)\n> "))
     parameters = Parameters.input()
+    calc = partial(
+        calc_square_pyramid,
+        glasses=1000,
+        edge_thickness=0.2,
+        target_glass_volume=200,
+        max_height=40,
+        parameters=parameters
+    )
 
     # Algorithme
     resultats = []
@@ -482,14 +503,9 @@ def basic_test():
         for j in range(0, 30_000, precision):
 
             # Effectuer les calculs
-            result: Resultat | None = fetch_result(calc_square_pyramid(
+            result: Resultat | None = fetch_result(calc(
                 pyramid_top=i/1000,
-                pyramid_height=j/1000,
-                glasses=1000,
-                edge_thickness=0.2,
-                target_glass_volume=200,
-                max_height=40,
-                parameters=parameters
+                pyramid_height=j/1000
             ), parameters)
 
             if result is None:
@@ -497,9 +513,7 @@ def basic_test():
 
             resultats.append(result)
 
-    # On trie et affiche les 10 meilleurs résultats
-    resultats.sort(key=lambda x: x.volume)
-    print(f'\n=== RESULTAT TROUVE ===\n\n{resultats[0]}')
+    print(f'\n=== RESULTAT TROUVE ===\n\n{min(resultats, key=lambda x: x.volume)}')
     # print('\n'.join([f'#{i}: {elem}' for i, elem in enumerate(resultats[:10])]))
 
 
@@ -573,18 +587,22 @@ def run_tests(
     pyramid_top_step = (pyramid_top_range[1] - pyramid_top_range[0]) / (precision - 1)
     pyramid_height_step = (pyramid_height_range[1] - pyramid_height_range[0]) / (precision - 1)
 
+    calc = partial(
+        calc_square_pyramid,
+        glasses=1000,
+        edge_thickness=0.2,
+        target_glass_volume=200,
+        max_height=40,
+        parameters=parameters
+    )
+
     # Tester toutes les combinaisons
     resultats = []
     for i in range(precision):
         for j in range(precision):
-            result = fetch_result(calc_square_pyramid(
+            result = fetch_result(calc(
                 pyramid_top=pyramid_top_range[0] + pyramid_top_step * i,
-                pyramid_height=pyramid_height_range[0] + pyramid_height_step * j,
-                glasses=1000,
-                edge_thickness=0.2,
-                target_glass_volume=200,
-                max_height=40,
-                parameters=parameters
+                pyramid_height=pyramid_height_range[0] + pyramid_height_step * j
             ), parameters)
             # None est renvoyé si les entrées n'aboutissent pas à une solution. On passe
             if result is not None:
