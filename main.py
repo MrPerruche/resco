@@ -210,9 +210,11 @@ def calc_square_pyramid(
     Avec e réel l'épaisseur du verre demandé par les consignes, nous déterminons l'épaisseur
     horizontale du verre qui est nécéssaire pour les prochains calculs.
     
-            cos theta = côté adjacent / hypoténuse = e / e_h
-        <=> e_h = e / cos(theta)
-        <=> e_h = e * sqrt(1 + c**2)
+    Note: theta = angle de la paroi, tan(theta) = c <=> theta = atan(c), donc sin(theta) = e / e_h
+    
+            e_h = e / sin(atan(c))
+        <=> e_h = e / (c / sqrt(1 + c²))
+        <=> e_h = e * sqrt(1 + c²) / c
 
     Avec e réel l'épaisseur du verre et e_h réel l'épaisseur horizontale du verre, on calcule la
     largeur extérieur de la base inférieur.
@@ -264,7 +266,7 @@ def calc_square_pyramid(
             print(f"Calcul de la hauteur OK: {a/b = } = {(H - h)/H = }")
 
     c = 2 * H / b
-    e_h = e * math.sqrt(1 + c**2)
+    e_h = e * math.sqrt(1 + c**2) / c
     theta = math.atan(c)  # Utilisé pour plus tard
     a_e = a + 2 * (e_h - e_h / c)
     if a_e <= a:
