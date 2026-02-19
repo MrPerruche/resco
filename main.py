@@ -8,6 +8,11 @@ Y -> PROFONDEUR
 Z -> HAUTEUR
 """
 
+from sys import version_info
+if version_info[1] < 13:
+    input("Ce script a été concu pour Python 3.13+. Si vous rencontrez des erreurs, veuillez mettre à jour python.\nAppuyez sur Entrer pour continuer.")
+
+
 import math
 from dataclasses import dataclass
 from functools import lru_cache, partial  # Memoization et optimizations
@@ -690,4 +695,10 @@ Options:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"Une erreur est survenue. Votre version de Python est-elle à jour?: ")
+        import traceback
+        traceback.print_exc()
+    input("Fin du programme. Appuyez sur Entrer pour quitter...")
